@@ -33,4 +33,4 @@ jobs:
           password: ${{ github.token }}
       - name: "Publish"
         run: |
-          ko build --bare --tag-only main.go
+          ko build --bare main.go
