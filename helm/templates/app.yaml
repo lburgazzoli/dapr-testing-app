@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "{{ .Release.Name }}-app-deployment"
+  namespace: "{{ .Release.Namespace }}"
+spec:
+  selector:
+    matchLabels:
+      app: "{{ .Release.Name }}-app"
+  template:
+    metadata:
+      annotations:
+        dapr.io/app-id: "{{ .Release.Name }}-app"
+        dapr.io/app-port: "8080"
+        dapr.io/enabled: "true"
+        dapr.io/enable-api-logging: "true"
+      labels:
+        app: "{{ .Release.Name }}-app"
+    spec:
+      containers:
+        - name: agenda-service
+          image: salaboy/dapr-operator-integration-testing-app-cc47165740c1fb3509ad9f43b9ee066f:v0.1.0
+          imagePullPolicy: Always
+          env:
+            - name: STATESTORE_NAME
+              value: "{{ .Release.Name }}-statestore"
+          livenessProbe:
+            httpGet:
+              path: /health/readiness
+              port: 8080
+          readinessProbe:
+            httpGet:
+              path: /health/liveness
+              port: 8080
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: "{{ .Release.Name }}-app-service"
+  namespace: "{{ .Release.Namespace }}"
+spec:
+  selector:
+    app: "{{ .Release.Name }}-app"
+  ports:
+    - port: 80
+      targetPort: 8080
