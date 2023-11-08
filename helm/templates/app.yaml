@@ -18,8 +18,8 @@ spec:
         app: "{{ .Release.Name }}-app"
     spec:
       containers:
-        - name: agenda-service
-          image: salaboy/dapr-operator-integration-testing-app-cc47165740c1fb3509ad9f43b9ee066f:v0.1.0
+        - name: dapr-testing-app
+          image: ghcr.io/lburgazzoli/dapr-testing-app:latest
           imagePullPolicy: Always
           env:
             - name: STATESTORE_NAME
