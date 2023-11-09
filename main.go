@@ -13,18 +13,29 @@ import (
 
 var (
 	stateStoreName string
+	appPort        string
 	daprClient     dapr.Client
 )
+
+func init() {
+	appPort = os.Getenv("APP_PORT")
+	if appPort == "" {
+		appPort = "8080"
+	}
+
+	stateStoreName = os.Getenv("STATESTORE_NAME")
+	if stateStoreName == "" {
+		stateStoreName = "statestore"
+	}
+}
 
 type MyValues struct {
 	Values []string
 }
 
 func writeHandler(w http.ResponseWriter, r *http.Request) {
-
 	value := r.URL.Query().Get("message")
-
-	values, _ := read(stateStoreName, "values")
+	values, _ := read(r.Context(), stateStoreName, "values")
 
 	if values.Values == nil || len(values.Values) == 0 {
 		values.Values = []string{value}
@@ -32,9 +43,12 @@ func writeHandler(w http.ResponseWriter, r *http.Request) {
 		values.Values = append(values.Values, value)
 	}
 
-	jsonData, err := json.Marshal(values)
+	data, err := json.Marshal(values)
+	if err != nil {
+		panic(err)
+	}
 
-	err = save(stateStoreName, "values", jsonData)
+	err = save(r.Context(), stateStoreName, "values", data)
 	if err != nil {
 		panic(err)
 	}
@@ -43,10 +57,8 @@ func writeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func readHandler(w http.ResponseWriter, r *http.Request) {
-
-	values, _ := read(stateStoreName, "values")
+	values, _ := read(r.Context(), stateStoreName, "values")
 	respondWithJSON(w, http.StatusOK, values)
-
 }
 
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
@@ -58,22 +70,13 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 }
 
 func main() {
-	appPort := os.Getenv("APP_PORT")
-	if appPort == "" {
-		appPort = "8080"
-	}
-
-	stateStoreName := os.Getenv("STATESTORE_NAME")
-	if stateStoreName == "" {
-		stateStoreName = "statestore"
-	}
-
 	dc, err := dapr.NewClient()
 	if err != nil {
 		panic(err)
 	}
 
 	daprClient = dc
+	defer daprClient.Close()
 
 	r := mux.NewRouter()
 
@@ -86,28 +89,16 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	})
 
-	r.PathPrefix("/").Handler(http.FileServer(http.Dir(os.Getenv("KO_DATA_PATH"))))
-	http.Handle("/", r)
-
-	log.Printf("Platform Proto Frontend App Started in port 8080!")
-	// Start the server; this is a blocking call
 	log.Fatal(http.ListenAndServe(":"+appPort, nil))
 
 }
 
 // Platform Provided
-func save(statestore string, key string, data []byte) error {
-	ctx := context.Background()
-	daprClient, err := dapr.NewClient()
-	if err != nil {
-		panic(err)
-	}
+func save(ctx context.Context, statestore string, key string, data []byte) error {
 	return daprClient.SaveState(ctx, statestore, key, data, nil)
 }
 
-func read(statestore string, key string) (MyValues, error) {
-	ctx := context.Background()
-
+func read(ctx context.Context, statestore string, key string) (MyValues, error) {
 	result, err := daprClient.GetState(ctx, statestore, key, nil)
 	if err != nil {
 		return MyValues{}, err
