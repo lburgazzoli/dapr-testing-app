@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 
 	dapr "github.com/dapr/go-sdk/client"
 	"github.com/gorilla/mux"
@@ -15,6 +16,7 @@ var (
 	stateStoreName string
 	appPort        string
 	daprClient     dapr.Client
+	once           sync.Once
 )
 
 func init() {
@@ -56,6 +58,18 @@ func writeHandler(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, values)
 }
 
+func client() dapr.Client {
+	once.Do(func() {
+		dc, err := dapr.NewClient()
+		if err != nil {
+			panic(err)
+		}
+
+		daprClient = dc
+	})
+
+	return daprClient
+}
 func readHandler(w http.ResponseWriter, r *http.Request) {
 	values, _ := read(r.Context(), stateStoreName, "values")
 	respondWithJSON(w, http.StatusOK, values)
@@ -70,24 +84,19 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 }
 
 func main() {
-	dc, err := dapr.NewClient()
-	if err != nil {
-		panic(err)
-	}
-
-	daprClient = dc
-	defer daprClient.Close()
-
 	r := mux.NewRouter()
 
-	// Dapr subscription routes orders topic to this route
 	r.HandleFunc("/write", writeHandler).Methods("POST")
 	r.HandleFunc("/read", readHandler).Methods("GET")
 
-	// Add handlers for readiness and liveness endpoints
-	r.HandleFunc("/health/{endpoint:readiness|liveness}", func(w http.ResponseWriter, r *http.Request) {
+	r.HandleFunc("/health/readiness", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	})
+	r.HandleFunc("/health/liveness", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	})
+
+	http.Handle("/", r)
 
 	log.Fatal(http.ListenAndServe(":"+appPort, nil))
 
@@ -95,11 +104,11 @@ func main() {
 
 // Platform Provided
 func save(ctx context.Context, statestore string, key string, data []byte) error {
-	return daprClient.SaveState(ctx, statestore, key, data, nil)
+	return client().SaveState(ctx, statestore, key, data, nil)
 }
 
 func read(ctx context.Context, statestore string, key string) (MyValues, error) {
-	result, err := daprClient.GetState(ctx, statestore, key, nil)
+	result, err := client().GetState(ctx, statestore, key, nil)
 	if err != nil {
 		return MyValues{}, err
 	}
